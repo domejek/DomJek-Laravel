@@ -1,0 +1,145 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  NODE_VERSION: '20'
+  PHP_VERSION: '8.2'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: password
+          MYSQL_DATABASE: testing
+        ports:
+          - 3306:3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: --health-cmd="redis-cli ping" --health-interval=10s --health-timeout=5s --health-retries=3
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: ${{ env.PHP_VERSION }}
+        extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, bcmath, soap, intl, gd, exif, iconv, imagick, mysql, redis
+        coverage: xdebug
+
+    - name: Copy environment file
+      run: cp .env.example .env
+
+    - name: Install Composer dependencies
+      run: composer install --no-progress --prefer-dist --optimize-autoloader
+
+    - name: Generate application key
+      run: php artisan key:generate
+
+    - name: Set up database
+      run: |
+        php artisan config:cache
+        php artisan migrate --force
+
+    - name: Run Laravel Pint (Code Style)
+      run: ./vendor/bin/pint --test
+
+    - name: Run PHPUnit tests
+      run: |
+        php artisan config:clear
+        php artisan test --coverage-clover=coverage.xml
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+
+    - name: Install NPM dependencies
+      working-directory: ./backend
+      run: npm ci
+
+    - name: Build frontend assets
+      working-directory: ./backend
+      run: npm run build
+
+    - name: Run security audit (PHP)
+      run: composer audit
+
+    - name: Run security audit (Node.js)
+      working-directory: ./backend
+      run: npm audit --audit-level=moderate
+
+  quality:
+    runs-on: ubuntu-latest
+    needs: test
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: ${{ env.PHP_VERSION }}
+
+    - name: Install Composer dependencies
+      run: composer install --no-progress --prefer-dist --optimize-autoloader
+
+    - name: Run Laravel static analysis
+      run: |
+        composer require --dev larastan/larastan
+        ./vendor/bin/phpstan analyse --memory-limit=2G
+
+    - name: Check for hardcoded secrets
+      uses: trufflesecurity/trufflehog@main
+      with:
+        path: ./
+        base: main
+        head: HEAD
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [test, quality]
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+
+    - name: Install dependencies and build
+      working-directory: ./backend
+      run: |
+        npm ci
+        npm run build
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-assets
+        path: backend/public/build/
+        retention-days: 30

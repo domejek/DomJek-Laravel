@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+<body class="bg-gray-100">
+    <header class="bg-blue-600 text-white p-4 shadow-md">
+        <div class="container mx-auto flex justify-between items-center">
+            <h1 class="text-2xl font-bold">API Dashboard</h1>
+            <nav class="flex space-x-4">
+                <button class="px-4 py-2 bg-blue-500 rounded hover:bg-blue-700 transition">Dashboard</button>
+                <button class="px-4 py-2 bg-blue-500 rounded hover:bg-blue-700 transition">Widgets</button>
+                <button class="px-4 py-2 bg-blue-500 rounded hover:bg-blue-700 transition">Einstellungen</button>
+            </nav>
+        </div>
+    </header>
+
+    <main class="container mx-auto p-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <!-- Wetter Widget -->
+            <div class="bg-white rounded-lg shadow-lg p-4" id="weather-widget">
+                <div class="flex justify-between items-center mb-2">
+                    <h3 class="text-lg font-semibold">Wetter</h3>
+                    <span class="text-sm text-gray-500" id="weather-location">Laden...</span>
+                </div>
+                <div class="text-center">
+                    <div class="text-3xl mb-2" id="weather-icon">🌤️</div>
+                    <div class="text-2xl font-bold" id="weather-temperature">--°C</div>
+                    <div class="text-sm text-gray-600" id="weather-condition">Laden...</div>
+                    <div class="grid grid-cols-2 gap-2 mt-2 text-xs">
+                        <div class="text-gray-500">Feuchtigkeit: <span id="weather-humidity">--%</span></div>
+                        <div class="text-gray-500">Wind: <span id="weather-wind">-- m/s</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Krypto Widget -->
+            <div class="bg-white rounded-lg shadow-lg p-4">
+                <div class="flex justify-between items-center mb-2">
+                    <h3 class="text-lg font-semibold">Krypto</h3>
+                    <span class="text-sm text-gray-500">Bitcoin</span>
+                </div>
+                <div class="text-center">
+                    <div class="text-2xl font-bold mb-2">$45,234</div>
+                    <div class="text-sm text-green-600">+5.2%</div>
+                </div>
+            </div>
+
+            <!-- Nachrichten Widget -->
+            <div class="bg-white rounded-lg shadow-lg p-4">
+                <div class="flex justify-between items-center mb-2">
+                    <h3 class="text-lg font-semibold">Nachrichten</h3>
+                    <span class="text-sm text-gray-500">Top 3</span>
+                </div>
+                <div class="space-y-2">
+                    <div class="text-sm p-2 bg-gray-50 rounded">
+                        <div class="font-medium">Tech News</div>
+                        <div class="text-gray-600">Neue KI-Entwicklung...</div>
+                    </div>
+                    <div class="text-sm p-2 bg-gray-50 rounded">
+                        <div class="font-medium">Wirtschaft</div>
+                        <div class="text-gray-600">Märkte steigen...</div>
+                    </div>
+                    <div class="text-sm p-2 bg-gray-50 rounded">
+                        <div class="font-medium">Sport</div>
+                        <div class="text-gray-600">Fußball-Ergebnisse...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- GitHub Widget -->
+            <div class="bg-white rounded-lg shadow-lg p-4">
+                <div class="flex justify-between items-center mb-2">
+                    <h3 class="text-lg font-semibold">GitHub</h3>
+                    <span class="text-sm text-gray-500">Repos</span>
+                </div>
+                <div class="text-center">
+                    <div class="text-2xl font-bold mb-2">12</div>
+                    <div class="text-sm text-gray-600">Öffentliche Repositories</div>
+                </div>
+            </div>
+
+            <!-- System Status Widget -->
+            <div class="bg-white rounded-lg shadow-lg p-4">
+                <div class="flex justify-between items-center mb-2">
+                    <h3 class="text-lg font-semibold">System Status</h3>
+                    <span class="text-sm text-gray-500">Live</span>
+                </div>
+                <div class="space-y-2">
+                    <div class="flex justify-between">
+                        <span class="text-sm">API Server</span>
+                        <span class="text-sm text-green-600">✓ Online</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-sm">Database</span>
+                        <span class="text-sm text-green-600">✓ Connected</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-sm">Cache</span>
+                        <span class="text-sm text-green-600">✓ Active</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Karte Widget -->
+            <div class="bg-white rounded-lg shadow-lg p-4 lg:col-span-2">
+                <div class="flex justify-between items-center mb-2">
+                    <h3 class="text-lg font-semibold">Standortkarte</h3>
+                    <span class="text-sm text-gray-500">Live Position</span>
+                </div>
+                <div id="map" class="h-64 rounded-lg bg-gray-200"></div>
+                <div class="mt-2 flex justify-between text-xs text-gray-500">
+                    <span>Position: <span id="map-coords">Laden...</span></span>
+                    <button onclick="getCurrentLocation()" class="px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 transition">
+                        📍 Standort aktualisieren
+                    </button>
+                </div>
+            </div>
+
+            <!-- Performance Widget (Simple Stats) -->
+            <div class="bg-white rounded-lg shadow-lg p-4">
+                <div class="flex justify-between items-center mb-2">
+                    <h3 class="text-lg font-semibold">Performance</h3>
+                    <span class="text-sm text-gray-500">24h</span>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="text-center">
+                        <div class="text-2xl font-bold text-green-600">99.9%</div>
+                        <div class="text-sm text-gray-600">Uptime</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-2xl font-bold text-blue-600">1.2s</div>
+                        <div class="text-sm text-gray-600">Avg Response</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-2xl font-bold text-purple-600">2.5M</div>
+                        <div class="text-sm text-gray-600">API Requests</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-2xl font-bold text-orange-600">45ms</div>
+                        <div class="text-sm text-gray-600">Load Time</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="bg-gray-800 text-white p-4 mt-8">
+        <div class="container mx-auto text-center">
+            <p>API Dashboard © 2026</p>
+        </div>
+    </footer>
+
+    <script>
+        // Dashboard JavaScript
+        let map = null;
+        let currentMarker = null;
+
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeMap();
+            loadWeatherData();
+            getCurrentLocation();
+            
+            // Widget Drag & Drop (einfache Simulation)
+            let draggedElement = null;
+
+            document.querySelectorAll('.bg-white.rounded-lg.shadow-lg.p-4').forEach(widget => {
+                widget.draggable = true;
+                widget.addEventListener('dragstart', function(e) {
+                    draggedElement = this;
+                    this.style.opacity = '0.5';
+                });
+
+                widget.addEventListener('dragend', function(e) {
+                    this.style.opacity = '';
+                });
+
+                widget.addEventListener('dragover', function(e) {
+                    e.preventDefault();
+                });
+
+                widget.addEventListener('drop', function(e) {
+                    e.preventDefault();
+                    if (this !== draggedElement) {
+                        const parent = this.parentNode;
+                        const draggedParent = draggedElement.parentNode;
+                        
+                        if (parent && draggedParent) {
+                            const temp = document.createElement('div');
+                            parent.insertBefore(temp, this);
+                            draggedParent.insertBefore(this, draggedElement);
+                            parent.insertBefore(draggedElement, temp);
+                            parent.removeChild(temp);
+                        }
+                    }
+                });
+            });
+
+            // Simulierte Live-Updates
+            function updateWidgetData() {
+                // Performance Widget Updates
+                const performanceStats = document.querySelectorAll('.text-2xl.font-bold');
+                if (performanceStats.length >= 4) {
+                    performanceStats[0].textContent = (98 + Math.random() * 2).toFixed(1) + '%'; // Uptime
+                    performanceStats[1].textContent = (0.8 + Math.random() * 0.8).toFixed(1) + 's'; // Response
+                    performanceStats[2].textContent = (2 + Math.random() * 2).toFixed(1) + 'M'; // Requests
+                    performanceStats[3].textContent = (30 + Math.random() * 30).toFixed(0) + 'ms'; // Load Time
+                }
+
+                // System Status Update
+                const systemItems = document.querySelectorAll('.text-green-600, .text-red-600');
+                if (systemItems.length > 0) {
+                    systemItems.forEach(item => {
+                        if (item.classList.contains('text-green-600')) {
+                            const isOnline = Math.random() > 0.05;
+                            if (!isOnline) {
+                                item.textContent = '✗ Offline';
+                                item.className = item.className.replace('text-green-600', 'text-red-600');
+                            }
+                        }
+                    });
+                }
+            }
+
+            // Alle 30 Sekunden aktualisieren
+            setInterval(updateWidgetData, 30000);
+            
+            // Wetter alle 10 Minuten aktualisieren
+            setInterval(loadWeatherData, 600000);
+
+            console.log('Dashboard initialized successfully!');
+        });
+
+        function initializeMap() {
+            map = L.map('map').setView([52.5200, 13.4050], 13);
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+        }
+
+        async function getCurrentLocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    async (position) => {
+                        const lat = position.coords.latitude;
+                        const lon = position.coords.longitude;
+                        
+                        updateMap(lat, lon);
+                        await loadWeatherData(lat, lon);
+                        updateCoordinates(lat, lon);
+                    },
+                    async (error) => {
+                        console.log('Geolocation nicht verfügbar, verwende Standardposition (Berlin)');
+                        await loadWeatherData(52.5200, 13.4050);
+                        updateMap(52.5200, 13.4050);
+                        updateCoordinates(52.5200, 13.4050);
+                    }
+                );
+            } else {
+                console.log('Geolocation nicht unterstützt');
+                loadWeatherData(52.5200, 13.4050);
+                updateMap(52.5200, 13.4050);
+                updateCoordinates(52.5200, 13.4050);
+            }
+        }
+
+        function updateMap(lat, lon) {
+            if (map) {
+                map.setView([lat, lon], 13);
+                
+                if (currentMarker) {
+                    map.removeLayer(currentMarker);
+                }
+                
+                currentMarker = L.marker([lat, lon]).addTo(map);
+                currentMarker.bindPopup('Ihr Standort').openPopup();
+            }
+        }
+
+        function updateCoordinates(lat, lon) {
+            const coordsElement = document.getElementById('map-coords');
+            if (coordsElement) {
+                coordsElement.textContent = `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+            }
+        }
+
+        async function loadWeatherData(lat = null, lon = null) {
+            try {
+                let url = '/api/weather';
+                if (lat && lon) {
+                    url += `?lat=${lat}&lon=${lon}`;
+                }
+                
+                const response = await fetch(url);
+                if (response.ok) {
+                    const data = await response.json();
+                    updateWeatherWidget(data);
+                } else {
+                    console.error('Wetterdaten konnten nicht geladen werden');
+                    updateWeatherWidget(null);
+                }
+            } catch (error) {
+                console.error('Fehler beim Laden der Wetterdaten:', error);
+                updateWeatherWidget(null);
+            }
+        }
+
+        function updateWeatherWidget(data) {
+            if (data) {
+                document.getElementById('weather-location').textContent = data.location || 'Unbekannt';
+                document.getElementById('weather-icon').textContent = data.icon || '🌤️';
+                document.getElementById('weather-temperature').textContent = `${data.temperature}°C`;
+                document.getElementById('weather-condition').textContent = data.condition || 'Unbekannt';
+                document.getElementById('weather-humidity').textContent = `${data.humidity}%`;
+                document.getElementById('weather-wind').textContent = `${data.wind_speed} m/s`;
+                
+                if (data.coordinates) {
+                    updateCoordinates(data.coordinates.lat, data.coordinates.lon);
+                    updateMap(data.coordinates.lat, data.coordinates.lon);
+                }
+            } else {
+                document.getElementById('weather-location').textContent = 'Fehler';
+                document.getElementById('weather-icon').textContent = '❌';
+                document.getElementById('weather-temperature').textContent = '--°C';
+                document.getElementById('weather-condition').textContent = 'Nicht verfügbar';
+                document.getElementById('weather-humidity').textContent = '--%';
+                document.getElementById('weather-wind').textContent = '-- m/s';
+            }
+        }
+    </script>
+</body>
+</html>

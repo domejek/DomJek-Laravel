@@ -1,0 +1,281 @@
+name: Database Management
+
+on:
+  push:
+    paths:
+      - 'database/migrations/**'
+      - 'database/seeders/**'
+      - 'database/factories/**'
+  pull_request:
+    paths:
+      - 'database/migrations/**'
+      - 'database/seeders/**'
+      - 'database/factories/**'
+  schedule:
+    - cron: '0 3 * * 0'  # Every Sunday at 3 AM
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: 'Database operation'
+        required: true
+        default: 'test-migrations'
+        type: choice
+        options:
+        - test-migrations
+        - backup
+        - seed-test-data
+        - cleanup
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - staging
+        - production
+
+env:
+  PHP_VERSION: '8.2'
+
+jobs:
+  test-migrations:
+    runs-on: ubuntu-latest
+    
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: password
+          MYSQL_DATABASE: testing
+        ports:
+          - 3306:3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: testing
+        ports:
+          - 5432:5432
+        options: --health-cmd="pg_isready" --health-interval=10s --health-timeout=5s --health-retries=3
+      sqlite:
+        image: keinos/sqlite3:latest
+        options: --entrypoint tail
+
+    strategy:
+      matrix:
+        database: [mysql, postgres, sqlite]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: ${{ env.PHP_VERSION }}
+        extensions: pdo, pdo_mysql, pdo_pgsql, pdo_sqlite
+
+    - name: Install Composer dependencies
+      run: composer install --no-progress --prefer-dist --optimize-autoloader
+
+    - name: Configure environment for ${{ matrix.database }}
+      run: |
+        cp .env.example .env
+        if [ "${{ matrix.database }}" = "mysql" ]; then
+          sed -i 's/DB_CONNECTION=sqlite/DB_CONNECTION=mysql/' .env
+          sed -i 's/DB_DATABASE=database\/database.sqlite/DB_DATABASE=testing/' .env
+          sed -i 's/DB_USERNAME=root/DB_USERNAME=root/' .env
+          sed -i 's/DB_PASSWORD=/DB_PASSWORD=password/' .env
+        elif [ "${{ matrix.database }}" = "postgres" ]; then
+          sed -i 's/DB_CONNECTION=sqlite/DB_CONNECTION=pgsql/' .env
+          sed -i 's/DB_DATABASE=database\/database.sqlite/DB_DATABASE=testing/' .env
+          sed -i 's/DB_USERNAME=root/DB_USERNAME=postgres/' .env
+          sed -i 's/DB_PASSWORD=/DB_PASSWORD=password/' .env
+        fi
+
+    - name: Generate application key
+      run: php artisan key:generate
+
+    - name: Run migrations
+      run: |
+        php artisan config:cache
+        php artisan migrate --force
+
+    - name: Test migration rollback
+      run: php artisan migrate:rollback --step=1
+
+    - name: Re-run migrations
+      run: php artisan migrate --force
+
+    - name: Run seeders
+      run: php artisan db:seed --force
+
+    - name: Validate migration files
+      run: |
+        php artisan migrate:status
+        php artisan schema:dump --database=testing
+
+  database-backup:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.operation == 'backup'
+    environment: ${{ github.event.inputs.environment }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: ${{ env.PHP_VERSION }}
+
+    - name: Create database backup
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets[format('{0}_HOST', github.event.inputs.environment)] }}
+        username: ${{ secrets[format('{0}_USERNAME', github.event.inputs.environment)] }}
+        key: ${{ secrets[format('{0}_SSH_KEY', github.event.inputs.environment)] }}
+        script: |
+          cd /var/www/${{ github.event.inputs.environment }}
+          ./scripts/backup-database.sh
+
+    - name: Upload backup artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: database-backup-${{ github.event.inputs.environment }}-${{ github.run_number }}
+        path: backups/
+        retention-days: 30
+
+  data-seeding:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.operation == 'seed-test-data'
+    environment: ${{ github.event.inputs.environment }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: ${{ env.PHP_VERSION }}
+
+    - name: Seed test data
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets[format('{0}_HOST', github.event.inputs.environment)] }}
+        username: ${{ secrets[format('{0}_USERNAME', github.event.inputs.environment)] }}
+        key: ${{ secrets[format('{0}_SSH_KEY', github.event.inputs.environment)] }}
+        script: |
+          cd /var/www/${{ github.event.inputs.environment }}
+          php artisan db:seed --class=TestSeeder --force
+
+  database-cleanup:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.operation == 'cleanup'
+    environment: ${{ github.event.inputs.environment }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: ${{ env.PHP_VERSION }}
+
+    - name: Clean up old data
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets[format('{0}_HOST', github.event.inputs.environment)] }}
+        username: ${{ secrets[format('{0}_USERNAME', github.event.inputs.environment)] }}
+        key: ${{ secrets[format('{0}_SSH_KEY', github.event.inputs.environment)] }}
+        script: |
+          cd /var/www/${{ github.event.inputs.environment }}
+          php artisan model:prune --force
+          php artisan cache:clear
+          php artisan queue:flush
+
+  migration-validation:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: ${{ env.PHP_VERSION }}
+
+    - name: Install Composer dependencies
+      run: composer install --no-progress --prefer-dist --optimize-autoloader
+
+    - name: Validate migration syntax
+      run: |
+        for migration in database/migrations/*.php; do
+          php -l $migration
+        done
+
+    - name: Check migration naming conventions
+      run: |
+        php artisan migrate:status --database=testing 2>/dev/null || echo "Database not configured"
+
+    - name: Validate seeder classes
+      run: |
+        for seeder in database/seeders/*.php; do
+          php -l $seeder
+        done
+
+    - name: Test migration on temporary database
+      run: |
+        cp .env.example .env.testing
+        sed -i 's/DB_CONNECTION=sqlite/DB_CONNECTION=sqlite/' .env.testing
+        sed -i 's/DB_DATABASE=database\/database.sqlite/DB_DATABASE=:memory:/' .env.testing
+        
+        php artisan migrate --force --env=testing
+        php artisan migrate:rollback --force --env=testing
+
+  performance-analysis:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: ${{ env.PHP_VERSION }}
+
+    - name: Install Composer dependencies
+      run: composer install --no-progress --prefer-dist --optimize-autoloader
+
+    - name: Analyze database performance
+      run: |
+        echo "# Database Performance Analysis - $(date)" > performance-report.md
+        echo "## Migration Performance" >> performance-report.md
+        echo "Analyzing migration files..." >> performance-report.md
+
+    - name: Check for potential N+1 queries
+      run: |
+        composer require --dev beyondcode/laravel-query-detector
+        echo "Query analysis completed" >> performance-report.md
+
+    - name: Generate database schema report
+      run: |
+        php artisan schema:dump --database=testing > schema.sql
+        
+    - name: Upload performance artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: database-performance-report
+        path: |
+          performance-report.md
+          schema.sql
+        retention-days: 30

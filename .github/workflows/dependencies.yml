@@ -1,0 +1,242 @@
+name: Dependency Management
+
+on:
+  schedule:
+    - cron: '0 2 * * 1'  # Every Monday at 2 AM
+  workflow_dispatch:
+    inputs:
+      update_type:
+        description: 'Type of update'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+        - patch
+        - minor
+        - major
+      php_only:
+        description: 'Update PHP packages only'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  NODE_VERSION: '20'
+  PHP_VERSION: '8.2'
+
+jobs:
+  security-audit:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: ${{ env.PHP_VERSION }}
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+
+    - name: Install Composer dependencies
+      run: composer install --prefer-dist
+
+    - name: Install NPM dependencies
+      working-directory: ./backend
+      run: npm ci
+
+    - name: Run Composer security audit
+      run: composer audit
+
+    - name: Run NPM security audit
+      working-directory: ./backend
+      run: npm audit --audit-level=moderate
+
+    - name: Check for known vulnerabilities
+      uses: snyk/actions/node@master
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      with:
+        args: --severity-threshold=high
+
+    - name: Generate security report
+      run: |
+        echo "# Security Audit Report - $(date)" > security-report.md
+        echo "## PHP Dependencies" >> security-report.md
+        composer audit --format=json > php-audit.json || true
+        echo "## Node.js Dependencies" >> security-report.md
+        cd backend && npm audit --json > ../npm-audit.json || true && cd ..
+
+    - name: Upload security artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: security-reports
+        path: |
+          security-report.md
+          php-audit.json
+          npm-audit.json
+        retention-days: 30
+
+  dependency-update:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: ${{ env.PHP_VERSION }}
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+
+    - name: Configure Git
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+
+    - name: Update PHP dependencies
+      run: |
+        composer update --no-interaction --prefer-dist --optimize-autoloader ${{ github.event.inputs.update_type == 'patch' && '--prefer-lowest' || '' }}
+
+    - name: Update Node.js dependencies
+      if: ${{ !github.event.inputs.php_only }}
+      working-directory: ./backend
+      run: |
+        npm update
+        npm run build
+
+    - name: Run tests after updates
+      run: |
+        cp .env.example .env
+        php artisan key:generate
+        php artisan test
+
+    - name: Check for changes
+      id: verify-changed-files
+      run: |
+        if [ -n "$(git status --porcelain)" ]; then
+          echo "changed=true" >> $GITHUB_OUTPUT
+        else
+          echo "changed=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Commit and push changes
+      if: steps.verify-changed-files.outputs.changed == 'true'
+      run: |
+        git add .
+        git commit -m "chore: update dependencies ($(date))"
+        git push
+
+    - name: Create Pull Request
+      if: steps.verify-changed-files.outputs.changed == 'true'
+      uses: peter-evans/create-pull-request@v5
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        commit-message: "chore: update dependencies"
+        title: "Dependency Updates"
+        body: |
+          Automated dependency update
+          
+          - PHP packages updated
+          - Node.js packages updated
+          - All tests passing
+        branch: dependency-updates
+        delete-branch: true
+
+  license-check:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: ${{ env.PHP_VERSION }}
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+
+    - name: Install dependencies
+      run: composer install --prefer-dist
+      
+    - name: Install NPM dependencies
+      working-directory: ./backend
+      run: npm ci
+
+    - name: Check PHP licenses
+      run: |
+        composer licenses --format=json > php-licenses.json
+        
+    - name: Check Node.js licenses
+      working-directory: ./backend
+      run: |
+        npx license-checker --json > npm-licenses.json
+
+    - name: Validate licenses against policy
+      run: |
+        # Add your license validation logic here
+        echo "Checking license compliance..."
+
+    - name: Upload license reports
+      uses: actions/upload-artifact@v4
+      with:
+        name: license-reports
+        path: |
+          php-licenses.json
+          npm-licenses.json
+        retention-days: 30
+
+  dependency-graph:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: ${{ env.PHP_VERSION }}
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+
+    - name: Install dependencies
+      run: composer install --prefer-dist
+      
+    - name: Install NPM dependencies
+      working-directory: ./backend
+      run: npm ci
+
+    - name: Generate dependency graph
+      run: |
+        composer show --tree > php-dependency-tree.txt
+        cd backend && npm ls > ../npm-dependency-tree.txt && cd ..
+
+    - name: Upload dependency graphs
+      uses: actions/upload-artifact@v4
+      with:
+        name: dependency-graphs
+        path: |
+          php-dependency-tree.txt
+          npm-dependency-tree.txt
+        retention-days: 30
